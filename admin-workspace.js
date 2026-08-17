@@ -813,6 +813,9 @@
     const conversionId = text(seed?.source_upcoming_id);
     const image = safeImage(item.image_url);
     openDrawer('product', existing ? `Edit ${item.name}` : conversionId ? 'Convert launch to product' : 'Add product', 'CATALOGUE', `<form class="aw-form" data-aw-form="product" data-aw-product-id="${esc(existing?.id || '')}" data-aw-source-upcoming="${esc(conversionId)}"><div class="aw-media-editor"><div class="aw-image-preview" data-aw-image-preview>${image ? `<img src="${esc(image)}" alt="Product preview">` : '<span>Image preview</span>'}</div><div><label class="aw-field"><span>Main product image</span><input type="file" name="image_file" accept="image/jpeg,image/png,image/webp" data-aw-image-file></label><label class="aw-field"><span>Or image URL</span><input type="url" name="image_url" value="${esc(item.image_url)}" placeholder="https://…" data-aw-image-url></label><small>JPG, PNG or WebP · maximum 5 MB.</small></div></div><div class="aw-form-grid"><label class="aw-field aw-field-wide"><span>Product name</span><input name="name" value="${esc(item.name)}" maxlength="160" required></label><label class="aw-field"><span>SKU</span><input name="sku" value="${esc(item.sku)}" maxlength="80" placeholder="SSBS-HAIR-001" required></label><label class="aw-field"><span>Category</span><select name="kind" required><option value="hair" ${item.kind === 'hair' ? 'selected' : ''}>Hair care</option><option value="skin" ${item.kind === 'skin' ? 'selected' : ''}>Skin care</option></select></label><label class="aw-field aw-field-wide"><span>Collection / type</span><input name="type" value="${esc(item.type)}" maxlength="160" placeholder="Hair care · 200 ml" required></label><label class="aw-field"><span>Price</span><input type="number" name="price" min="0" step="1" value="${item.price == null ? '' : number(item.price)}" required></label><label class="aw-field"><span>Stock quantity</span><input type="number" name="stock_quantity" min="0" step="1" value="${item.stock_quantity == null ? '0' : number(item.stock_quantity)}" required></label><label class="aw-field"><span>Low-stock alert at</span><input type="number" name="low_stock_threshold" min="0" step="1" value="${item.low_stock_threshold == null ? '5' : number(item.low_stock_threshold)}" required></label><label class="aw-field aw-check"><input type="checkbox" name="active" ${item.active === false ? '' : 'checked'}><span>Visible on the storefront</span></label></div>${conversionId ? '<div class="aw-callout is-neutral">The launch details are carried across. After this product saves, the launch teaser will be hidden.</div>' : ''}<div class="aw-drawer-footer"><button type="button" class="quiet-button" data-aw-close-drawer>Cancel</button><button type="submit" class="button">${existing ? 'Save product' : conversionId ? 'Create live product' : 'Add product'}</button></div></form>`, existing?.id || conversionId);
+    const priceField = q('input[name="price"]', q('[data-aw-form="product"]'));
+    priceField?.closest('label')?.insertAdjacentHTML('beforebegin', `<label class="aw-field"><span>MRP</span><input type="number" name="mrp" min="0" step="1" value="${item.mrp == null ? number(item.price) : number(item.mrp)}" required></label>`);
+    if (priceField?.closest('label')?.querySelector('span')) priceField.closest('label').querySelector('span').textContent = 'Discounted price';
   }
   async function uploadWorkspaceImage(file) {
     if (!file || !file.size) return '';
@@ -829,6 +832,7 @@
     const fields = new FormData(form);
     const file = fields.get('image_file');
     const requestedUrl = text(fields.get('image_url'));
+    if (number(fields.get('mrp')) < number(fields.get('price'))) throw new Error('MRP must be equal to or higher than the discounted price.');
     if (requestedUrl && !safeImage(requestedUrl)) throw new Error('Use a safe https:// image URL.');
     const submit = q('button[type="submit"]', form);
     submit.disabled = true;
@@ -843,6 +847,7 @@
           kind: text(fields.get('kind')),
           type: text(fields.get('type')),
           price: number(fields.get('price')),
+          mrp: number(fields.get('mrp')),
           stock_quantity: number(fields.get('stock_quantity')),
           low_stock_threshold: number(fields.get('low_stock_threshold')),
           image_url: uploadedUrl || requestedUrl || existing?.image_url || '',
@@ -995,6 +1000,7 @@
         number(coupon.minimum_order) ? `Min ${money(coupon.minimum_order)}` : 'No minimum spend',
         number(coupon.minimum_quantity) > 1 ? `${number(coupon.minimum_quantity)}+ items` : 'Any quantity',
         coupon.first_order_only ? 'First order only' : 'All customers',
+        Array.isArray(coupon.product_ids) && coupon.product_ids.length ? `${coupon.product_ids.length} selected product${coupon.product_ids.length === 1 ? '' : 's'}` : 'All products',
         coupon.starts_at ? `Starts ${formatDate(coupon.starts_at)}` : 'Starts immediately',
         coupon.expires_at ? `Ends ${formatDate(coupon.expires_at)}` : 'No expiry'
       ];
@@ -1027,6 +1033,9 @@
       item.expires_at = '';
     }
     openDrawer('coupon', existing ? `Edit ${item.code}` : duplicate ? `Duplicate ${source.code}` : 'Create coupon', 'MARKETING', `<form class="aw-form" data-aw-form="coupon" data-aw-coupon-id="${esc(existing?.id || '')}"><div class="aw-form-grid"><label class="aw-field"><span>Offer name</span><input name="title" value="${esc(item.title)}" maxlength="160" required></label><label class="aw-field"><span>Coupon code</span><input name="code" value="${esc(item.code)}" maxlength="40" pattern="[A-Za-z0-9_-]+" required></label><label class="aw-field aw-field-wide"><span>Customer message</span><textarea name="description" maxlength="1000" required>${esc(item.description)}</textarea></label><label class="aw-field"><span>Discount percent</span><input type="number" name="discount_percent" min="1" max="90" value="${item.discount_percent == null ? '' : number(item.discount_percent)}" required></label><label class="aw-field"><span>Minimum order value</span><input type="number" name="minimum_order" min="0" value="${number(item.minimum_order)}"></label><label class="aw-field"><span>Minimum quantity</span><input type="number" name="minimum_quantity" min="1" max="20" value="${Math.max(1, number(item.minimum_quantity) || 1)}"></label><label class="aw-field"><span>Start date</span><input type="date" name="starts_at" value="${esc(text(item.starts_at).slice(0, 10))}"></label><label class="aw-field"><span>Expiry date</span><input type="date" name="expires_at" value="${esc(text(item.expires_at).slice(0, 10))}"></label><label class="aw-field aw-field-wide"><span>Short badge text</span><input name="banner_text" value="${esc(item.banner_text)}" maxlength="120" placeholder="Optional storefront badge"></label><label class="aw-field aw-check"><input type="checkbox" name="first_order_only" ${item.first_order_only ? 'checked' : ''}><span>First order only</span></label><label class="aw-field aw-check"><input type="checkbox" name="active" ${item.active === false ? '' : 'checked'}><span>Enabled</span></label></div><div class="aw-callout is-neutral">A future start date displays this coupon as Scheduled. Checkout enforces the same start and expiry dates.</div><div class="aw-drawer-footer"><button type="button" class="quiet-button" data-aw-close-drawer>Cancel</button><button type="submit" class="button">${existing ? 'Save coupon' : duplicate ? 'Create duplicate' : 'Create coupon'}</button></div></form>`, existing?.id || 'new');
+    const couponGrid = q('.aw-form-grid', q('[data-aw-form="coupon"]'));
+    const selectedProducts = new Set((Array.isArray(item.product_ids) ? item.product_ids : []).map(text));
+    couponGrid?.insertAdjacentHTML('beforeend', `<fieldset class="aw-field aw-field-wide aw-product-scope"><legend>Eligible products</legend><p>Leave every product unchecked to apply the coupon to the entire catalogue.</p>${getProducts().filter(product => product.active !== false).map(product => `<label class="aw-check"><input type="checkbox" name="product_ids" value="${esc(product.id)}" ${selectedProducts.has(text(product.id)) ? 'checked' : ''}><span>${esc(product.name)}</span></label>`).join('')}</fieldset>`);
   }
   async function saveCouponForm(form) {
     const id = text(form.getAttribute('data-aw-coupon-id'));
@@ -1038,7 +1047,7 @@
     if (startsAt && expiresAt && startsAt > expiresAt) throw new Error('The coupon start date must be before its expiry date.');
     const code = text(fields.get('code')).toUpperCase();
     if (all.some(item => item !== existing && text(item.code).toUpperCase() === code)) throw new Error(`Coupon code ${code} already exists.`);
-    const item = { id: existing?.id || crypto.randomUUID(), title: text(fields.get('title')), code, description: text(fields.get('description')), discount_percent: number(fields.get('discount_percent')), minimum_order: number(fields.get('minimum_order')), minimum_quantity: Math.max(1, number(fields.get('minimum_quantity'))), first_order_only: form.elements.first_order_only.checked, banner_text: text(fields.get('banner_text')) || null, starts_at: startsAt, expires_at: expiresAt, active: form.elements.active.checked, updated_at: nowISO() };
+    const item = { id: existing?.id || crypto.randomUUID(), title: text(fields.get('title')), code, description: text(fields.get('description')), discount_percent: number(fields.get('discount_percent')), minimum_order: number(fields.get('minimum_order')), minimum_quantity: Math.max(1, number(fields.get('minimum_quantity'))), product_ids: fields.getAll('product_ids').map(text).filter(Boolean), first_order_only: form.elements.first_order_only.checked, banner_text: text(fields.get('banner_text')) || null, starts_at: startsAt, expires_at: expiresAt, active: form.elements.active.checked, updated_at: nowISO() };
     const submit = q('button[type="submit"]', form);
     submit.disabled = true;
     try {
