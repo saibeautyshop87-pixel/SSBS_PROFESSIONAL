@@ -547,6 +547,16 @@
       await runOperation('Saving order', async () => {
         let inventoryCommitted = Boolean(order.inventory_committed);
         if (!inventoryCommitted && ['preparing', 'shipped', 'out for delivery', 'delivered'].includes(nextStatus)) {
+          // The inventory RPC validates the payment status stored in the database.
+          // Persist verification first so a newly verified order can be committed.
+          if (text(order.payment_status).toLowerCase() !== nextPayment) {
+            await apiRequest('orders', 'PATCH', {
+              payment_status: patch.payment_status,
+              payment_reference: patch.payment_reference,
+              payment_verified_at: patch.payment_verified_at,
+              updated_at: patch.updated_at
+            }, `?id=eq.${encodeURIComponent(dbId)}`, { requireRow: true });
+          }
           await apiRequest('rpc/commit_order_inventory', 'POST', { p_order_id: dbId }, '', { prefer: 'return=representation' });
           inventoryCommitted = true;
         }
@@ -1265,12 +1275,12 @@
       if (target.matches('[data-aw-refresh]')) return void refreshWorkspace();
       if (target.matches('[data-aw-logout]')) return void logout();
       if (target.matches('[data-aw-mobile-menu]')) {
-        document.body.classList.add('aw-menu-open');
+        document.body.classList.add('aw-nav-open');
         q('[data-aw-mobile-menu]')?.setAttribute('aria-expanded', 'true');
         return;
       }
       if (target.matches('[data-aw-close-menu]')) {
-        document.body.classList.remove('aw-menu-open');
+        document.body.classList.remove('aw-nav-open');
         q('[data-aw-mobile-menu]')?.setAttribute('aria-expanded', 'false');
         return;
       }
@@ -1337,7 +1347,7 @@
       if (event.key === 'Escape') {
         if (q('#aw-confirm-modal')?.classList.contains('is-open')) resolveConfirm(false);
         else if (document.body.classList.contains('aw-drawer-open')) closeDrawer();
-        else document.body.classList.remove('aw-menu-open');
+        else document.body.classList.remove('aw-nav-open');
       }
     });
   }

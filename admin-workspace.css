@@ -3031,9 +3031,11 @@ body.aw-drawer-open .aw-drawer-panel {
 
 .aw-app.is-nav-open .aw-nav-backdrop,
 body.aw-nav-open .aw-nav-backdrop,
+body.aw-menu-open .aw-nav-backdrop,
 .aw-nav-backdrop.is-open,
 .aw-app.is-nav-open .aw-mobile-backdrop,
 body.aw-nav-open .aw-mobile-backdrop,
+body.aw-menu-open .aw-mobile-backdrop,
 .aw-mobile-backdrop.is-open {
   visibility: visible;
   opacity: 1;
@@ -3315,7 +3317,8 @@ body.aw-nav-open .aw-mobile-backdrop,
 
   .aw-sidebar.is-open,
   .aw-app.is-nav-open .aw-sidebar,
-  body.aw-nav-open .aw-sidebar {
+  body.aw-nav-open .aw-sidebar,
+  body.aw-menu-open .aw-sidebar {
     visibility: visible;
     transform: translateX(0);
     transition-delay: 0s;
