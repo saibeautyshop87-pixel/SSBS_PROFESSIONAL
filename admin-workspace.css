@@ -4,6 +4,7 @@
  * All component classes use the aw- prefix so this layer can be loaded
  * alongside the storefront stylesheet without changing customer pages.
  */
+.aw-row-select{float:left;margin:0 10px 0 0}.aw-row-select input{width:17px;height:17px}.aw-whatsapp-handoff{margin-top:16px;background:#f0f8f2!important;border-color:#b9d8c0!important}.aw-whatsapp-handoff>p{color:#5f6f64}.aw-whatsapp-handoff .quiet-button{border-color:#70a47d;color:#245c35}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
 :root {
   --aw-ink: #18211b;

@@ -42,6 +42,7 @@
     returnSearch: '',
     productTab: 'active',
     productSearch: '',
+    productSelection: new Set(),
     upcomingTab: 'all',
     upcomingSearch: '',
     couponTab: 'all',
@@ -487,6 +488,21 @@
     if (state.previewObjectUrl) URL.revokeObjectURL(state.previewObjectUrl);
     state.previewObjectUrl = '';
   }
+  function orderWhatsAppMessage(order, branch) {
+    const customer = orderCustomer(order);
+    const address = text(order.address || customer.address);
+    const pincode = text(order.pincode || customer.pincode);
+    const items = (Array.isArray(order.items) ? order.items : []).map((item, index) => `${index + 1}. ${text(item.name || 'Product')} x${Math.max(1, number(item.quantity))} — ${money(number(item.price) * Math.max(1, number(item.quantity)))}`).join('\n');
+    return [`*SSBS ORDER ${orderNumber(order)}*`, `Fulfilment branch: ${branch.name}`, '', '*Customer*', `${orderCustomerName(order)}`, `Phone: ${orderPhone(order)}`, `Address: ${address}${pincode ? `, ${pincode}` : ''}`, '', '*Items*', items || 'No item details recorded', '', `Subtotal: ${money(order.subtotal || order.total)}`, `Discount: ${money(order.discount || 0)}`, `Delivery: ${money(order.delivery_charge || 0)}`, `*Order total: ${money(order.total)}*`, `Payment: ${titleCase(paymentStatus(order))}`, `Order status: ${titleCase(order.status || 'confirmed')}`, order.admin_note ? `Admin note: ${text(order.admin_note)}` : ''].filter(Boolean).join('\n');
+  }
+  function sendOrderToBranch(orderNo, branchId) {
+    const order = getOrders().find(item => orderNumber(item) === text(orderNo));
+    const branch = getBranches().find(item => text(item.id) === text(branchId));
+    if (!order || !branch) return toast('Order or branch could not be found.', 'error');
+    const phone = text(branch.whatsapp_phone).replace(/\D/g, '');
+    if (!phone) return toast(`Add a WhatsApp number for ${branch.name} in Settings first.`, 'error', 6500);
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(orderWhatsAppMessage(order, branch))}`, '_blank', 'noopener');
+  }
   function openOrderDrawer(orderNo) {
     const order = getOrders().find(item => orderNumber(item) === text(orderNo));
     if (!order) return toast('That order is no longer in the current list. Refresh and try again.', 'error');
@@ -505,6 +521,9 @@
       <section class="aw-section"><div class="aw-section-head"><div><p class="eyebrow">FULFILMENT</p><h3>Save the complete handoff together</h3></div>${statusChip(order.inventory_committed ? 'inventory committed' : 'inventory not committed', order.inventory_committed ? 'is-success' : 'is-warning')}</div>${order.inventory_committed ? '<div class="aw-callout is-success">Inventory has been committed for this order and will not be decremented again.</div>' : '<div class="aw-callout is-warning">Inventory is committed once, automatically, when a verified order first moves into preparation or shipping.</div>'}<div class="aw-form-grid"><label class="aw-field"><span>Branch</span><select name="branch_id">${branchOptions(orderBranchId(order))}</select></label><label class="aw-field"><span>Order status</span><select name="status" required>${orderStatusOptions(order.status || 'confirmed')}</select></label><label class="aw-field"><span>Manual delivery charge</span><input type="number" name="delivery_charge" min="0" step="1" value="${number(order.delivery_charge)}" placeholder="0"></label><label class="aw-field"><span>Courier partner</span><input name="courier" value="${esc(order.courier)}" placeholder="e.g. Mark Express"></label><label class="aw-field"><span>AWB / consignment number</span><input name="awb" value="${esc(order.awb)}" placeholder="Courier reference"></label><label class="aw-field aw-field-wide"><span>Tracking URL</span><input type="url" name="tracking_url" value="${esc(order.tracking_url)}" placeholder="https://…"></label><label class="aw-field aw-field-wide"><span>Private admin note</span><textarea name="admin_note" maxlength="1000" placeholder="Visible only to administrators">${esc(order.admin_note)}</textarea></label></div><div class="aw-callout is-neutral">Use delivery charge after checking customer address/PIN. Order total will include this manual charge.</div></section>
       <div class="aw-drawer-footer"><div class="aw-actions"><button type="button" class="quiet-button" data-aw-print="invoice" data-aw-print-order="${esc(orderNumber(order))}">Invoice</button><button type="button" class="quiet-button" data-aw-print="packing" data-aw-print-order="${esc(orderNumber(order))}">Packing slip</button><button type="button" class="quiet-button" data-aw-print="label" data-aw-print-order="${esc(orderNumber(order))}">Shipping label</button></div><button type="submit" class="button">${currentPayment === 'verified' ? 'Save order' : 'Verify payment & save'}</button></div>
     </form>`, orderNumber(order));
+    const handoffBranches = getBranches().filter(branch => branch.active !== false);
+    const drawerForm = q('[data-aw-form="order"]');
+    drawerForm?.insertAdjacentHTML('beforeend', `<section class="aw-section aw-whatsapp-handoff"><div class="aw-section-head"><div><p class="eyebrow">MANUAL BRANCH HANDOFF</p><h3>Send complete order on WhatsApp</h3></div></div><p>Choose a branch. WhatsApp opens with the complete order ready for you to review and send manually.</p><div class="aw-actions">${handoffBranches.map(branch => `<button type="button" class="quiet-button" data-aw-whatsapp-order="${esc(orderNumber(order))}" data-aw-whatsapp-branch="${esc(branch.id)}">${esc(branch.name)}${branch.whatsapp_phone ? ' ↗' : ' · number needed'}</button>`).join('')}</div></section>`);
   }
   async function saveOrderForm(form) {
     const orderNo = form.getAttribute('data-aw-order-id');
@@ -787,6 +806,8 @@
     if (requestedTab && ['active', 'low', 'archived', 'all'].includes(requestedTab)) state.productTab = requestedTab;
     const tabs = [['active', 'Active'], ['low', 'Low stock'], ['archived', 'Archived'], ['all', 'All']];
     root.innerHTML = `${pageHead('Catalogue', 'Products', 'Manage publish state, inventory and the storefront image from one catalogue.', `<button type="button" class="button" data-aw-new-product>Add product</button>`)}<section class="aw-section"><div class="aw-tabs" role="tablist" aria-label="Product status">${tabs.map(([value, label]) => `<button type="button" role="tab" class="aw-tab ${state.productTab === value ? 'is-active' : ''}" aria-selected="${state.productTab === value}" data-aw-product-tab="${esc(value)}"><span>${esc(label)}</span><b data-aw-product-tab-count="${esc(value)}">${productTabCount(value)}</b></button>`).join('')}</div><div class="aw-toolbar"><label class="aw-search"><span class="aw-cell-label">Search products</span><input type="search" value="${esc(state.productSearch)}" placeholder="Name, SKU, collection…" data-aw-product-search></label><button type="button" class="quiet-button" data-aw-refresh>Refresh inventory</button></div><div class="aw-table-wrap" data-aw-product-list>${productRows(filteredProducts())}</div></section>`;
+    q('.aw-toolbar', root)?.insertAdjacentHTML('beforeend', '<button type="button" class="button" data-aw-bulk-products disabled>Bulk edit <b data-aw-selection-count>0</b></button>');
+    enhanceProductSelection();
   }
   function productRows(items) {
     if (!items.length) return emptyState('No matching products', 'Try another inventory view or search term.', '<button type="button" class="button" data-aw-new-product>Add product</button>');
@@ -805,6 +826,53 @@
       button.setAttribute('aria-selected', String(active));
     });
     qa('[data-aw-product-tab-count]').forEach(node => { node.textContent = String(productTabCount(node.getAttribute('data-aw-product-tab-count'))); });
+    enhanceProductSelection();
+  }
+  function enhanceProductSelection() {
+    qa('.aw-product-table tbody tr').forEach(row => {
+      const id = q('[data-aw-edit-product]', row)?.getAttribute('data-aw-edit-product');
+      const cell = q('td', row);
+      if (!id || !cell || q('[data-aw-select-product]', row)) return;
+      cell.insertAdjacentHTML('afterbegin', `<label class="aw-row-select"><input type="checkbox" data-aw-select-product="${esc(id)}" ${state.productSelection.has(text(id)) ? 'checked' : ''}><span class="sr-only">Select product</span></label>`);
+    });
+    updateProductSelectionButton();
+  }
+  function updateProductSelectionButton() {
+    const count = state.productSelection.size;
+    const button = q('[data-aw-bulk-products]');
+    if (button) button.disabled = count === 0;
+    const label = q('[data-aw-selection-count]');
+    if (label) label.textContent = String(count);
+  }
+  function openBulkProductDrawer() {
+    const ids = [...state.productSelection];
+    if (!ids.length) return toast('Select at least one product first.', 'error');
+    openDrawer('bulk-product', `Edit ${ids.length} products`, 'BULK CATALOGUE UPDATE', `<form class="aw-form" data-aw-form="bulk-product"><div class="aw-callout is-neutral">Only completed fields will be changed. Existing values in blank fields remain untouched.</div><div class="aw-form-grid"><label class="aw-field"><span>Set MRP</span><input type="number" name="mrp" min="0" step="1" placeholder="No change"></label><label class="aw-field"><span>Set discounted price</span><input type="number" name="price" min="0" step="1" placeholder="No change"></label><label class="aw-field"><span>Adjust stock by</span><input type="number" name="stock_adjustment" step="1" placeholder="e.g. 10 or -5"></label><label class="aw-field"><span>Storefront status</span><select name="active"><option value="">No change</option><option value="true">Active</option><option value="false">Archived</option></select></label></div><div class="aw-drawer-footer"><button type="button" class="quiet-button" data-aw-close-drawer>Cancel</button><button type="submit" class="button">Update ${ids.length} products</button></div></form>`, ids.join(','));
+  }
+  async function saveBulkProductForm(form) {
+    const ids = [...state.productSelection];
+    const fields = new FormData(form);
+    const hasMrp = text(fields.get('mrp')) !== '', hasPrice = text(fields.get('price')) !== '', hasStock = text(fields.get('stock_adjustment')) !== '', activeValue = text(fields.get('active'));
+    if (!hasMrp && !hasPrice && !hasStock && !activeValue) throw new Error('Choose at least one bulk change.');
+    const all = getProducts();
+    const changed = all.filter(product => ids.includes(text(product.id))).map(product => {
+      const next = { ...product, updated_at: nowISO() };
+      if (hasMrp) next.mrp = number(fields.get('mrp'));
+      if (hasPrice) next.price = number(fields.get('price'));
+      if (hasStock) next.stock_quantity = Math.max(0, number(product.stock_quantity) + number(fields.get('stock_adjustment')));
+      if (activeValue) next.active = activeValue === 'true';
+      if (number(next.mrp || next.price) < number(next.price)) throw new Error(`MRP cannot be lower than price for ${product.name}.`);
+      return next;
+    });
+    await runOperation('Updating selected products', async () => {
+      await Promise.all(changed.map(product => apiRequest('products', 'PATCH', { mrp: product.mrp, price: product.price, stock_quantity: product.stock_quantity, active: product.active, updated_at: product.updated_at }, `?id=eq.${encodeURIComponent(product.id)}`, { requireRow: true })));
+      const byId = new Map(changed.map(product => [text(product.id), product]));
+      writeCache(CACHE.products, all.map(product => byId.get(text(product.id)) || product));
+      await logActivity('products bulk updated', 'product', ids.join(','), { count: changed.length });
+    }, `${changed.length} products updated.`);
+    state.productSelection.clear();
+    closeDrawer();
+    requestRender();
   }
   function openProductDrawer(id = '', seed = null) {
     const existing = id ? getProducts().find(item => text(item.id) === text(id)) : null;
@@ -1144,13 +1212,17 @@
     if (id && !existing) return toast('Branch not found. Refresh and try again.', 'error');
     const item = existing || {};
     openDrawer('branch', existing ? `Edit ${item.name}` : 'Add branch', 'FULFILMENT SETTINGS', `<form class="aw-form" data-aw-form="branch" data-aw-branch-id="${esc(existing?.id || '')}"><div class="aw-form-grid"><label class="aw-field aw-field-wide"><span>Branch name</span><input name="name" value="${esc(item.name)}" maxlength="120" required></label><label class="aw-field aw-field-wide"><span>Description</span><textarea name="description" maxlength="500" required>${esc(item.description)}</textarea></label><label class="aw-field aw-check"><input type="checkbox" name="active" ${item.active === false ? '' : 'checked'}><span>Active fulfilment location</span></label></div><div class="aw-drawer-footer"><button type="button" class="quiet-button" data-aw-close-drawer>Cancel</button><button type="submit" class="button">${existing ? 'Save branch' : 'Add branch'}</button></div></form>`, existing?.id || 'new');
+    const branchGrid = q('.aw-form-grid', q('[data-aw-form="branch"]'));
+    branchGrid?.insertAdjacentHTML('beforeend', `<label class="aw-field aw-field-wide"><span>WhatsApp number</span><input type="tel" name="whatsapp_phone" value="${esc(item.whatsapp_phone)}" inputmode="numeric" maxlength="15" placeholder="919876543210"><small>Country code + number, digits only.</small></label>`);
   }
   async function saveBranchForm(form) {
     const id = text(form.getAttribute('data-aw-branch-id'));
     const all = getBranches();
     const existing = all.find(item => text(item.id) === id);
     const fields = new FormData(form);
-    const item = { id: existing?.id || crypto.randomUUID(), name: text(fields.get('name')), description: text(fields.get('description')), active: form.elements.active.checked };
+    const whatsappPhone = text(fields.get('whatsapp_phone')).replace(/\D/g, '');
+    if (whatsappPhone && (whatsappPhone.length < 10 || whatsappPhone.length > 15)) throw new Error('Enter a valid WhatsApp number with country code.');
+    const item = { id: existing?.id || crypto.randomUUID(), name: text(fields.get('name')), description: text(fields.get('description')), whatsapp_phone: whatsappPhone || null, active: form.elements.active.checked };
     if (all.some(branch => branch !== existing && text(branch.name).toLowerCase() === item.name.toLowerCase())) throw new Error(`A branch named ${item.name} already exists.`);
     await runOperation(existing ? 'Saving branch' : 'Adding branch', async () => {
       await apiRequest('branches', 'POST', [item], '?on_conflict=id', { requireRow: true });
@@ -1264,6 +1336,7 @@
       else if (type === 'return') await saveReturnDecision(form);
       else if (type === 'refund') await saveRefundRecord(form);
       else if (type === 'product') await saveProductForm(form);
+      else if (type === 'bulk-product') await saveBulkProductForm(form);
       else if (type === 'upcoming') await saveUpcomingForm(form);
       else if (type === 'coupon') await saveCouponForm(form);
       else if (type === 'branch') await saveBranchForm(form);
@@ -1300,9 +1373,11 @@
       if (target.matches('[data-aw-confirm-cancel]')) return void resolveConfirm(false);
       if (target.matches('[data-aw-confirm-accept]')) return void resolveConfirm(true);
       if (target.matches('[data-aw-open-order]')) return void openOrderDrawer(target.getAttribute('data-aw-open-order'));
+      if (target.matches('[data-aw-whatsapp-order]')) return void sendOrderToBranch(target.getAttribute('data-aw-whatsapp-order'), target.getAttribute('data-aw-whatsapp-branch'));
       if (target.matches('[data-aw-open-return]')) return void openReturnDrawer(target.getAttribute('data-aw-open-return'));
       if (target.matches('[data-aw-print]')) return void printOrder(target.getAttribute('data-aw-print-order'), target.getAttribute('data-aw-print'));
       if (target.matches('[data-aw-new-product]')) return void openProductDrawer();
+      if (target.matches('[data-aw-bulk-products]')) return void openBulkProductDrawer();
       if (target.matches('[data-aw-edit-product]')) return void openProductDrawer(target.getAttribute('data-aw-edit-product'));
       if (target.matches('[data-aw-toggle-product]')) return void toggleProduct(target.getAttribute('data-aw-toggle-product'), target.getAttribute('data-aw-next-active') === 'true');
       if (target.matches('[data-aw-new-upcoming]')) return void openUpcomingDrawer();
@@ -1344,6 +1419,12 @@
 
     document.addEventListener('change', event => {
       const target = event.target;
+      if (target.matches?.('[data-aw-select-product]')) {
+        const id = text(target.getAttribute('data-aw-select-product'));
+        target.checked ? state.productSelection.add(id) : state.productSelection.delete(id);
+        updateProductSelectionButton();
+        return;
+      }
       if (target.matches?.('[data-aw-order-branch-filter]')) { state.orderBranch = target.value; updateOrderList(); }
       if (target.matches?.('[data-aw-image-file]')) {
         const file = target.files?.[0];
